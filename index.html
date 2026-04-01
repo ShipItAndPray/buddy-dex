@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BuddyDex — Pokedex-style Completion Tracker for Claude Code /buddy</title>
+<meta name="description" content="Gotta discover 'em all! Track which of the 18 Claude Code /buddy species you've encountered. Enter friend's usernames to discover new species.">
+<meta property="og:title" content="BuddyDex — Gotta discover 'em all!">
+<meta property="og:description" content="Pokedex-style completion tracker for Claude Code /buddy species. Can you find all 18?">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://shipitandpray.github.io/buddy-dex/">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0d0d0d;--surface:#1a1a1a;--surface2:#222;--border:#333;
+  --text:#e8e8e8;--text2:#888;--text3:#555;
+  --red:#dc2626;--red-dark:#991b1b;--red-glow:rgba(220,38,38,.15);
+  --white:#f5f5f5;
+  --common:#9e9e9e;--uncommon:#4caf50;--rare:#2196f3;--epic:#9c27b0;--legendary:#ff9800;
+  --shiny:#ffd700;
+}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh;overflow-x:hidden}
+a{color:var(--red);text-decoration:none}a:hover{text-decoration:underline}
+
+/* Hero */
+.hero{text-align:center;padding:48px 20px 32px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;top:0;left:0;right:0;height:50%;background:var(--red-dark);clip-path:polygon(0 0,100% 0,100% 80%,50% 100%,0 80%);opacity:.25}
+.hero h1{font-size:clamp(2.2rem,7vw,4rem);font-weight:900;letter-spacing:-.03em;position:relative;z-index:1}
+.hero h1 .buddy{color:var(--red)}
+.hero h1 .dex{color:var(--white)}
+.hero .tagline{color:var(--text2);font-size:1rem;margin-top:8px;position:relative;z-index:1}
+.hero .completion-big{font-size:1.6rem;font-weight:700;margin-top:16px;position:relative;z-index:1}
+.hero .completion-big .pct{color:var(--red);font-size:2rem}
+
+/* Progress bar */
+.progress-bar-wrap{max-width:500px;margin:16px auto 0;position:relative;z-index:1}
+.progress-bar-outer{background:var(--surface);border:2px solid var(--border);border-radius:12px;height:24px;overflow:hidden}
+.progress-bar-inner{height:100%;background:linear-gradient(90deg,var(--red-dark),var(--red));border-radius:10px;transition:width .5s ease;position:relative}
+.progress-bar-inner::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.15) 0%,transparent 60%);border-radius:10px}
+
+/* Input sections */
+.input-section{max-width:600px;margin:24px auto 0;padding:0 20px;position:relative;z-index:1}
+.input-row{display:flex;gap:10px;margin-bottom:12px}
+.input-row input{flex:1;padding:12px 16px;border-radius:10px;border:2px solid var(--border);background:var(--surface);color:var(--text);font-size:1rem;outline:none;transition:border-color .2s}
+.input-row input:focus{border-color:var(--red)}
+.input-row input::placeholder{color:var(--text3)}
+.btn{padding:10px 20px;border-radius:10px;border:none;cursor:pointer;font-size:.9rem;font-weight:700;transition:all .2s}
+.btn-red{background:var(--red);color:#fff}
+.btn-red:hover{background:#ef4444;transform:translateY(-1px)}
+.btn-outline{background:transparent;color:var(--text);border:2px solid var(--border)}
+.btn-outline:hover{border-color:var(--red);color:var(--red)}
+.label{font-size:.85rem;color:var(--text2);margin-bottom:6px;font-weight:600}
+
+/* Your buddy banner */
+.your-buddy{max-width:600px;margin:20px auto;padding:0 20px}
+.your-buddy-card{background:var(--surface);border:2px solid var(--border);border-radius:14px;padding:16px 20px;display:flex;align-items:center;gap:16px;transition:border-color .3s}
+.your-buddy-card.registered{border-color:var(--red)}
+.your-buddy-sprite{font-family:'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:1.3;white-space:pre;color:var(--text)}
+.your-buddy-info h3{font-size:1.1rem;font-weight:700}
+.your-buddy-info .species-tag{display:inline-block;padding:2px 10px;border-radius:6px;font-size:.75rem;font-weight:700;margin-left:8px}
+
+/* Discovery animation */
+@keyframes discoveryFlash{
+  0%{background:rgba(220,38,38,.4);transform:scale(1.05)}
+  100%{background:transparent;transform:scale(1)}
+}
+@keyframes newBadgePop{
+  0%{transform:scale(0) rotate(-20deg);opacity:0}
+  60%{transform:scale(1.3) rotate(5deg);opacity:1}
+  100%{transform:scale(1) rotate(0deg);opacity:1}
+}
+.discovery-flash{animation:discoveryFlash .6s ease-out}
+.new-badge{position:absolute;top:-8px;right:-8px;background:var(--red);color:#fff;font-size:.65rem;font-weight:900;padding:3px 8px;border-radius:8px;animation:newBadgePop .4s ease-out;z-index:5}
+
+/* Dex Grid */
+.dex-section{max-width:900px;margin:32px auto;padding:0 20px}
+.dex-section h2{text-align:center;font-size:1.3rem;margin-bottom:4px;color:var(--text)}
+.dex-section .subtitle{text-align:center;color:var(--text2);font-size:.85rem;margin-bottom:20px}
+.filter-row{display:flex;gap:8px;justify-content:center;margin-bottom:20px;flex-wrap:wrap}
+.filter-btn{padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:.8rem;cursor:pointer;transition:all .2s}
+.filter-btn.active,.filter-btn:hover{border-color:var(--red);color:var(--red);background:var(--red-glow)}
+
+.dex-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
+.dex-slot{position:relative;background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .3s;min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.dex-slot:hover{border-color:var(--text3);transform:translateY(-2px)}
+.dex-slot.discovered{border-color:var(--border)}
+.dex-slot.discovered:hover{border-color:var(--red)}
+.dex-slot.shiny-discovered{border-color:var(--shiny);box-shadow:0 0 12px rgba(255,215,0,.2)}
+.dex-slot .sprite{font-family:'SF Mono',Menlo,Consolas,monospace;font-size:10px;line-height:1.25;white-space:pre;margin-bottom:8px;transition:all .3s}
+.dex-slot .sprite.undiscovered{color:#333;filter:brightness(0.3)}
+.dex-slot .sprite.discovered-color{color:var(--text)}
+.dex-slot .sprite.shiny-color{color:var(--shiny)}
+.dex-slot .slot-name{font-size:.8rem;font-weight:700;color:var(--text)}
+.dex-slot .slot-name.unknown{color:var(--text3)}
+.dex-slot .slot-rarity{font-size:.65rem;margin-top:2px}
+.dex-slot .slot-number{position:absolute;top:6px;left:8px;font-size:.6rem;color:var(--text3);font-weight:600}
+.dex-slot .shiny-star{position:absolute;top:6px;right:8px;font-size:.7rem}
+
+/* Species detail modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--surface);border:2px solid var(--border);border-radius:16px;max-width:420px;width:100%;padding:28px;position:relative}
+.modal-close{position:absolute;top:12px;right:16px;font-size:1.2rem;cursor:pointer;color:var(--text2);background:none;border:none}
+.modal-close:hover{color:var(--text)}
+.modal .modal-sprite{text-align:center;font-family:'SF Mono',Menlo,Consolas,monospace;font-size:16px;line-height:1.3;white-space:pre;margin:12px 0 16px}
+.modal .modal-name{text-align:center;font-size:1.4rem;font-weight:800}
+.modal .modal-rarity-badge{display:inline-block;padding:3px 12px;border-radius:8px;font-size:.75rem;font-weight:700;margin:4px 0 12px}
+.modal .stat-row{display:flex;align-items:center;gap:10px;margin:6px 0}
+.modal .stat-label{width:80px;font-size:.75rem;font-weight:700;color:var(--text2)}
+.modal .stat-bar-bg{flex:1;height:10px;background:#ffffff11;border-radius:5px;overflow:hidden}
+.modal .stat-bar-fill{height:100%;border-radius:5px;transition:width .4s ease}
+.modal .stat-val{width:28px;text-align:right;font-size:.75rem;font-weight:700}
+.modal .modal-lore{margin-top:14px;font-size:.85rem;color:var(--text2);line-height:1.5;text-align:center;font-style:italic}
+.modal .discovered-by{margin-top:10px;font-size:.75rem;color:var(--text3);text-align:center}
+
+/* Trophy case */
+.trophy-section{max-width:900px;margin:32px auto;padding:0 20px}
+.trophy-section h2{text-align:center;font-size:1.3rem;margin-bottom:16px}
+.trophy-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+.trophy{background:var(--surface);border:2px solid var(--border);border-radius:10px;padding:14px;text-align:center;transition:all .3s}
+.trophy.earned{border-color:var(--shiny);background:linear-gradient(135deg,var(--surface),#2a2200)}
+.trophy.locked{opacity:.4}
+.trophy .trophy-icon{font-size:1.6rem;margin-bottom:4px}
+.trophy .trophy-name{font-size:.8rem;font-weight:700}
+.trophy .trophy-desc{font-size:.65rem;color:var(--text2);margin-top:2px}
+
+/* Challenge hints */
+.challenge-section{max-width:600px;margin:32px auto;padding:0 20px}
+.challenge-box{background:var(--surface);border:2px solid var(--red-dark);border-radius:14px;padding:20px;text-align:center}
+.challenge-box h3{color:var(--red);font-size:1.1rem;margin-bottom:8px}
+.challenge-box p{color:var(--text2);font-size:.85rem;line-height:1.5}
+.hint-list{list-style:none;margin-top:12px;text-align:left}
+.hint-list li{padding:6px 0;font-size:.8rem;color:var(--text2);border-bottom:1px solid var(--border)}
+.hint-list li::before{content:'?';display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;background:var(--red-dark);color:var(--red);border-radius:50%;font-size:.65rem;font-weight:900;margin-right:8px}
+
+/* Share card */
+.share-section{max-width:600px;margin:32px auto;padding:0 20px 40px}
+.share-section .btn{width:100%;padding:14px;font-size:1rem}
+.share-canvas-wrap{text-align:center;margin-top:16px}
+.share-canvas-wrap canvas{border-radius:12px;max-width:100%}
+
+/* Toast */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--red-dark);color:#fff;padding:12px 24px;border-radius:10px;font-size:.9rem;font-weight:600;opacity:0;transition:all .3s ease;pointer-events:none;z-index:200}
+.toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+
+/* Footer */
+footer{text-align:center;padding:32px 20px;border-top:1px solid var(--border);color:var(--text3);font-size:.8rem}
+
+/* Responsive */
+@media(max-width:600px){
+  .hero{padding:32px 16px 24px}
+  .dex-grid{grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+  .dex-slot{padding:10px 6px;min-height:140px}
+  .dex-slot .sprite{font-size:8px}
+  .input-row{flex-direction:column}
+  .your-buddy-card{flex-direction:column;text-align:center}
+  .trophy-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}
+}
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<div class="hero">
+  <h1><span class="buddy">Buddy</span><span class="dex">Dex</span></h1>
+  <p class="tagline">Gotta discover 'em all! Track every Claude Code /buddy species.</p>
+  <div class="completion-big"><span class="pct" id="pctDisplay">0%</span> <span id="countDisplay">0/36 discovered</span></div>
+  <div class="progress-bar-wrap">
+    <div class="progress-bar-outer">
+      <div class="progress-bar-inner" id="progressBar" style="width:0%"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Register your buddy -->
+<div class="input-section">
+  <div class="label">Your Username</div>
+  <div class="input-row">
+    <input type="text" id="myUsername" placeholder="Enter your Claude username..." autocomplete="off" spellcheck="false">
+    <button class="btn btn-red" id="registerBtn">Register</button>
+  </div>
+</div>
+
+<!-- Your buddy card -->
+<div class="your-buddy" id="yourBuddyWrap" style="display:none">
+  <div class="your-buddy-card" id="yourBuddyCard">
+    <div class="your-buddy-sprite" id="yourBuddySprite"></div>
+    <div class="your-buddy-info">
+      <h3 id="yourBuddyName"></h3>
+      <div id="yourBuddyMeta"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Discover input -->
+<div class="input-section">
+  <div class="label">Discover a Friend's Buddy</div>
+  <div class="input-row">
+    <input type="text" id="discoverInput" placeholder="Enter a friend's username..." autocomplete="off" spellcheck="false">
+    <button class="btn btn-red" id="discoverBtn">Discover</button>
+  </div>
+</div>
+
+<!-- Dex Grid -->
+<div class="dex-section">
+  <h2>Species Compendium</h2>
+  <p class="subtitle">18 species + shiny variants = 36 total entries</p>
+  <div class="filter-row" id="filterRow">
+    <button class="filter-btn active" data-filter="all">All</button>
+    <button class="filter-btn" data-filter="discovered">Discovered</button>
+    <button class="filter-btn" data-filter="undiscovered">Undiscovered</button>
+    <button class="filter-btn" data-filter="shiny">Shiny</button>
+  </div>
+  <div class="dex-grid" id="dexGrid"></div>
+</div>
+
+<!-- Trophy Case -->
+<div class="trophy-section">
+  <h2>Trophy Case</h2>
+  <div class="trophy-grid" id="trophyGrid"></div>
+</div>
+
+<!-- Challenge -->
+<div class="challenge-section">
+  <div class="challenge-box">
+    <h3>Challenge: Find All 18 Species</h3>
+    <p>No single person can complete the dex alone. You need friends! Each username maps to exactly one species. The more usernames you enter, the more species you discover.</p>
+    <ul class="hint-list" id="hintList"></ul>
+  </div>
+</div>
+
+<!-- Share -->
+<div class="share-section">
+  <button class="btn btn-red" id="shareBtn">Generate Share Card</button>
+  <div class="share-canvas-wrap" id="shareWrap" style="display:none">
+    <canvas id="shareCanvas"></canvas>
+    <div style="margin-top:10px">
+      <button class="btn btn-outline" id="downloadShareBtn">Download</button>
+      <button class="btn btn-outline" id="tweetShareBtn" style="margin-left:8px">Tweet</button>
+    </div>
+  </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" id="modal">
+    <button class="modal-close" id="modalClose">&times;</button>
+    <div class="modal-sprite" id="modalSprite"></div>
+    <div style="text-align:center">
+      <div class="modal-name" id="modalName"></div>
+      <span class="modal-rarity-badge" id="modalRarity"></span>
+    </div>
+    <div id="modalStats"></div>
+    <div class="modal-lore" id="modalLore"></div>
+    <div class="discovered-by" id="modalDiscoveredBy"></div>
+  </div>
+</div>
+
+<footer>
+  <a href="https://github.com/ShipItAndPray/buddy-dex" target="_blank">Source on GitHub</a> &middot;
+  Powered by <a href="https://github.com/ShipItAndPray" target="_blank">ShipItAndPray</a>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ====== MULBERRY32 PRNG ======
+function mulberry32(seed) {
+  return function() {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function hashString(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + c;
+    hash |= 0;
+  }
+  return hash;
+}
+
+// ====== SPECIES DATA ======
+const SPECIES = ['duck','goose','blob','cat','dragon','octopus','owl','penguin','turtle','snail','ghost','axolotl','capybara','cactus','robot','rabbit','mushroom','chonk'];
+const RARITY_WEIGHTS = [0.60, 0.25, 0.10, 0.04, 0.01];
+const RARITY_NAMES = ['Common','Uncommon','Rare','Epic','Legendary'];
+const RARITY_COLORS = ['#9e9e9e','#4caf50','#2196f3','#9c27b0','#ff9800'];
+
+const STAT_NAMES = ['DEBUGGING','PATIENCE','CHAOS','WISDOM','SNARK'];
+const STAT_COLORS = ['#ff6b6b','#51cf66','#ffd43b','#74c0fc','#da77f2'];
+
+const SPRITES = {
+  duck:     ['    >o)     ','   (_>      ','    ||      ','   /_\\     ','   ~ ~      '],
+  goose:    ['   \\o>     ','   (|       ','   /|\\     ','  / | \\    ','  ~~~~      '],
+  blob:     ['   .---.    ','  ( o_o )   ','  (     )   ','   \\   /   ','    `~`     '],
+  cat:      ['   /\\_/\\  ','  ( o.o )   ','   > ^ <    ','  /|   |\\  ','  ~     ~   '],
+  dragon:   ['  /\\  /\\  ',' (  \\/  )  ','  ) @@ (    ',' /|    |\\  ',' ~`~~~~`~  '],
+  octopus:  ['   ,---.    ','  ( O O )   ','   \\   /   ','  /|/|\\|\\  ','  ~ ~ ~ ~   '],
+  owl:      ['   {o,o}    ','   |)__)    ','   -"-"-    ','   /| |\\   ','   ~ ~ ~    '],
+  penguin:  ['   (o_ o)   ','   /|  |\\  ','  ( |  | )  ','   \\|  |/  ','    `~~`    '],
+  turtle:   ['     __     ','   /(..)\\  ','  /_/--\\_\\ ','  |_|  |_|  ','   ~    ~   '],
+  snail:    ['     @  @   ','    /|      ','  _/ ___    ',' (___(  )   ','  ~~~~~~~~  '],
+  ghost:    ['   .---.    ','  ( O O )   ','  |  o  |   ','  | ___ |   ','  /\\/\\/\\  '],
+  axolotl:  ['  \\\\(^.^)//','   ( --- )  ','   /     \\  ','  |~|   |~| ','   ~~~-~~~  '],
+  capybara: ['   .-----.  ','  ( o   o ) ','  (  ===  ) ','   |     |  ','   ~~   ~~  '],
+  cactus:   ['    |\\|    ','   \\| |/   ','    | |     ','   /| |     ','   ~~~~~    '],
+  robot:    ['  [=====]   ','  |[o][o]|  ','  |  __  |  ','  /| [] |\\  ','  d|    |b  '],
+  rabbit:   ['   (\\  /)  ','   ( o.o)   ','   (> < )   ','   /|  |\\  ','   ~    ~   '],
+  mushroom: ['   .-""-.   ','  /  **  \\  ','  \\______/ ','    |  |    ','    `~~`    '],
+  chonk:    ['   .===.    ','  / o o \\   ',' (   w   )  ',' (       )  ','  `~~~~~`   '],
+};
+
+const LORE = {
+  duck:     'A humble duck that debugs by quacking at the code. Surprisingly effective.',
+  goose:    'Aggressive. Will steal your semicolons. Honks at syntax errors.',
+  blob:     'An amorphous being of pure vibes. Takes the shape of whatever you need.',
+  cat:      'Knocks your production server off the table. No remorse.',
+  dragon:   'Breathes fire at technical debt. Hoards clean abstractions.',
+  octopus:  'Eight tentacles, eight concurrent threads. The ultimate multitasker.',
+  owl:      'Sees bugs in the dark. Wisdom stat through the roof.',
+  penguin:  'Slides gracefully through Linux kernel code. Tuxedo optional.',
+  turtle:   'Slow and steady wins the deployment. Never rushes a release.',
+  snail:    'Leaves a trail of well-documented code. Takes its sweet time.',
+  ghost:    'Haunts your codebase. Finds the bugs nobody else can see.',
+  axolotl:  'Regenerates deleted code from memory. Cute but powerful.',
+  capybara: 'Gets along with every framework. The universal adapter.',
+  cactus:   'Thrives in harsh environments. Needs almost no resources to run.',
+  robot:    'Pure logic. Zero emotion. Maximum efficiency.',
+  rabbit:   'Multiplies your test coverage exponentially. Very fast.',
+  mushroom: 'Grows in the dark corners of your codebase. Decomposes legacy code.',
+  chonk:    'Absolute unit. Takes up all the memory but worth every byte.',
+};
+
+// ====== BUDDY GENERATION (same as buddy-card) ======
+function getBuddy(userId) {
+  const hash = hashString(userId);
+  const rng = mulberry32(hash);
+  const speciesIdx = Math.floor(rng() * SPECIES.length);
+  const rarityRoll = rng();
+  let rarity = 0, cumulative = 0;
+  for (let i = 0; i < RARITY_WEIGHTS.length; i++) {
+    cumulative += RARITY_WEIGHTS[i];
+    if (rarityRoll < cumulative) { rarity = i; break; }
+  }
+  const shiny = rng() < 0.01;
+  const stats = {};
+  STAT_NAMES.forEach(s => { stats[s.toLowerCase()] = Math.floor(rng() * 100); });
+  return { species: SPECIES[speciesIdx], rarity, shiny, stats, userId };
+}
+
+// ====== LOCAL STORAGE ======
+const STORAGE_KEY = 'buddydex_v1';
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch(e) {}
+  return { myUsername: null, discovered: {}, shinyDiscovered: {}, usernames: [] };
+}
+
+function saveState(state) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+let state = loadState();
+
+// ====== TOAST ======
+const toastEl = document.getElementById('toast');
+function showToast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  setTimeout(() => toastEl.classList.remove('show'), 2500);
+}
+
+// ====== TROPHY DEFINITIONS ======
+const TROPHIES = [
+  { id: 'first', icon: '🥚', name: 'First Hatch', desc: 'Discover your first species', check: s => Object.keys(s.discovered).length >= 1 },
+  { id: 'five', icon: '🔍', name: 'Field Researcher', desc: 'Discover 5 species', check: s => Object.keys(s.discovered).length >= 5 },
+  { id: 'ten', icon: '📖', name: 'Half Dex', desc: 'Discover 9 species', check: s => Object.keys(s.discovered).length >= 9 },
+  { id: 'all_common', icon: '⭐', name: 'Common Collector', desc: 'Find all Common species', check: s => {
+    return SPECIES.filter((_,i) => { const b = getBuddyBySpeciesIdx(i); return b.rarity === 0; }).length === 0 ||
+      SPECIES.every((sp,i) => { return getRarityForSpecies(i) !== 0 || s.discovered[sp]; });
+  }},
+  { id: 'first_rare', icon: '💎', name: 'Rare Find', desc: 'Discover a Rare species', check: s => Object.entries(s.discovered).some(([sp, u]) => { const b = getBuddy(u); return b.rarity >= 2; }) },
+  { id: 'first_epic', icon: '🔮', name: 'Epic Discovery', desc: 'Discover an Epic species', check: s => Object.entries(s.discovered).some(([sp, u]) => { const b = getBuddy(u); return b.rarity >= 3; }) },
+  { id: 'first_legendary', icon: '👑', name: 'Legendary Hunter', desc: 'Discover a Legendary species', check: s => Object.entries(s.discovered).some(([sp, u]) => { const b = getBuddy(u); return b.rarity >= 4; }) },
+  { id: 'first_shiny', icon: '✨', name: 'Shiny!', desc: 'Discover a shiny variant', check: s => Object.keys(s.shinyDiscovered).length >= 1 },
+  { id: 'fifteen', icon: '🏆', name: 'Almost There', desc: 'Discover 15 species', check: s => Object.keys(s.discovered).length >= 15 },
+  { id: 'all_species', icon: '🎖️', name: 'Dex Complete', desc: 'Discover all 18 species', check: s => Object.keys(s.discovered).length >= 18 },
+  { id: 'social', icon: '🤝', name: 'Social Butterfly', desc: 'Enter 10 different usernames', check: s => (s.usernames || []).length >= 10 },
+  { id: 'all_shiny', icon: '🌟', name: 'Shiny Master', desc: 'Find all 18 shiny variants', check: s => Object.keys(s.shinyDiscovered).length >= 18 },
+];
+
+// Helper: species rarity is username-dependent, but we can check which species a given buddy represents
+function getRarityForSpecies(speciesIdx) {
+  // Rarity depends on the username, not the species itself — species don't have fixed rarities
+  return -1; // Not applicable
+}
+
+// ====== RENDER DEX GRID ======
+let currentFilter = 'all';
+
+function renderDex() {
+  const grid = document.getElementById('dexGrid');
+  grid.innerHTML = '';
+
+  // Normal species
+  SPECIES.forEach((sp, idx) => {
+    const isDiscovered = !!state.discovered[sp];
+    const discoveredBy = state.discovered[sp] || null;
+    const buddy = discoveredBy ? getBuddy(discoveredBy) : null;
+
+    if (currentFilter === 'discovered' && !isDiscovered) return;
+    if (currentFilter === 'undiscovered' && isDiscovered) return;
+    if (currentFilter === 'shiny') return; // handled below
+
+    const slot = document.createElement('div');
+    slot.className = 'dex-slot' + (isDiscovered ? ' discovered' : '');
+    slot.innerHTML = `
+      <span class="slot-number">#${String(idx + 1).padStart(3, '0')}</span>
+      <div class="sprite ${isDiscovered ? 'discovered-color' : 'undiscovered'}">${SPRITES[sp].join('\n')}</div>
+      <div class="slot-name ${isDiscovered ? '' : 'unknown'}">${isDiscovered ? capitalize(sp) : '???'}</div>
+      ${isDiscovered && buddy ? `<div class="slot-rarity" style="color:${RARITY_COLORS[buddy.rarity]}">${RARITY_NAMES[buddy.rarity]}</div>` : ''}
+    `;
+    slot.addEventListener('click', () => openModal(sp, false));
+    grid.appendChild(slot);
+  });
+
+  // Shiny variants
+  SPECIES.forEach((sp, idx) => {
+    const isDiscovered = !!state.shinyDiscovered[sp];
+    const discoveredBy = state.shinyDiscovered[sp] || null;
+    const buddy = discoveredBy ? getBuddy(discoveredBy) : null;
+
+    if (currentFilter === 'discovered' && !isDiscovered) return;
+    if (currentFilter === 'undiscovered' && isDiscovered) return;
+    if (currentFilter === 'shiny' && !isDiscovered) {
+      // Show undiscovered shiny slots too in shiny filter
+    }
+
+    const slot = document.createElement('div');
+    slot.className = 'dex-slot' + (isDiscovered ? ' shiny-discovered' : '');
+    slot.innerHTML = `
+      <span class="slot-number">#${String(idx + 19).padStart(3, '0')}</span>
+      <span class="shiny-star">${isDiscovered ? '✨' : ''}</span>
+      <div class="sprite ${isDiscovered ? 'shiny-color' : 'undiscovered'}">${SPRITES[sp].join('\n')}</div>
+      <div class="slot-name ${isDiscovered ? '' : 'unknown'}">${isDiscovered ? capitalize(sp) + ' ✨' : '??? ✨'}</div>
+      ${isDiscovered && buddy ? `<div class="slot-rarity" style="color:${RARITY_COLORS[buddy.rarity]}">${RARITY_NAMES[buddy.rarity]}</div>` : ''}
+    `;
+    slot.addEventListener('click', () => openModal(sp, true));
+    grid.appendChild(slot);
+  });
+}
+
+function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+// ====== MODAL ======
+const modalOverlay = document.getElementById('modalOverlay');
+const modalEl = document.getElementById('modal');
+
+function openModal(species, isShiny) {
+  const discovered = isShiny ? state.shinyDiscovered[species] : state.discovered[species];
+
+  document.getElementById('modalSprite').textContent = SPRITES[species].join('\n');
+  document.getElementById('modalSprite').style.color = !discovered ? '#333' : (isShiny ? 'var(--shiny)' : 'var(--text)');
+  document.getElementById('modalName').textContent = discovered ? capitalize(species) + (isShiny ? ' ✨' : '') : '???';
+
+  const buddy = discovered ? getBuddy(discovered) : null;
+  const rarityBadge = document.getElementById('modalRarity');
+  if (buddy) {
+    rarityBadge.textContent = RARITY_NAMES[buddy.rarity];
+    rarityBadge.style.background = RARITY_COLORS[buddy.rarity] + '33';
+    rarityBadge.style.color = RARITY_COLORS[buddy.rarity];
+    rarityBadge.style.display = 'inline-block';
+  } else {
+    rarityBadge.style.display = 'none';
+  }
+
+  // Stats
+  const statsDiv = document.getElementById('modalStats');
+  statsDiv.innerHTML = '';
+  if (buddy) {
+    const statKeys = Object.keys(buddy.stats);
+    statKeys.forEach((key, i) => {
+      const val = buddy.stats[key];
+      const row = document.createElement('div');
+      row.className = 'stat-row';
+      row.innerHTML = `
+        <span class="stat-label">${STAT_NAMES[i]}</span>
+        <div class="stat-bar-bg"><div class="stat-bar-fill" style="width:${val}%;background:${STAT_COLORS[i]}"></div></div>
+        <span class="stat-val" style="color:${STAT_COLORS[i]}">${val}</span>
+      `;
+      statsDiv.appendChild(row);
+    });
+  } else {
+    statsDiv.innerHTML = '<div style="text-align:center;color:var(--text3);padding:16px;font-size:.85rem">Enter a username with this species to reveal stats</div>';
+  }
+
+  document.getElementById('modalLore').textContent = discovered ? (LORE[species] || '') : 'Species not yet discovered...';
+  document.getElementById('modalDiscoveredBy').textContent = discovered ? `Discovered via @${discovered}` : '';
+
+  modalOverlay.classList.add('open');
+}
+
+document.getElementById('modalClose').addEventListener('click', () => modalOverlay.classList.remove('open'));
+modalOverlay.addEventListener('click', e => { if (e.target === modalOverlay) modalOverlay.classList.remove('open'); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') modalOverlay.classList.remove('open'); });
+
+// ====== FILTERS ======
+document.getElementById('filterRow').addEventListener('click', e => {
+  if (!e.target.classList.contains('filter-btn')) return;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  e.target.classList.add('active');
+  currentFilter = e.target.dataset.filter;
+  renderDex();
+});
+
+// ====== COMPLETION COUNTER ======
+function updateCompletion() {
+  const speciesCount = Object.keys(state.discovered).length;
+  const shinyCount = Object.keys(state.shinyDiscovered).length;
+  const total = speciesCount + shinyCount;
+  const pct = Math.round((total / 36) * 100);
+  document.getElementById('pctDisplay').textContent = pct + '%';
+  document.getElementById('countDisplay').textContent = `${total}/36 discovered`;
+  document.getElementById('progressBar').style.width = pct + '%';
+}
+
+// ====== REGISTER YOUR BUDDY ======
+document.getElementById('registerBtn').addEventListener('click', () => {
+  const username = document.getElementById('myUsername').value.trim();
+  if (!username) return;
+  state.myUsername = username;
+  if (!state.usernames) state.usernames = [];
+  if (!state.usernames.includes(username)) state.usernames.push(username);
+  saveState(state);
+  discoverUsername(username);
+  renderYourBuddy();
+});
+
+document.getElementById('myUsername').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('registerBtn').click();
+});
+
+function renderYourBuddy() {
+  if (!state.myUsername) {
+    document.getElementById('yourBuddyWrap').style.display = 'none';
+    return;
+  }
+  const buddy = getBuddy(state.myUsername);
+  document.getElementById('yourBuddyWrap').style.display = 'block';
+  document.getElementById('yourBuddyCard').classList.add('registered');
+  document.getElementById('yourBuddySprite').textContent = SPRITES[buddy.species].join('\n');
+  document.getElementById('yourBuddySprite').style.color = buddy.shiny ? 'var(--shiny)' : 'var(--text)';
+  document.getElementById('yourBuddyName').innerHTML = `@${state.myUsername}'s Buddy`;
+  document.getElementById('yourBuddyMeta').innerHTML = `
+    <span style="color:${RARITY_COLORS[buddy.rarity]};font-weight:700">${RARITY_NAMES[buddy.rarity]}</span>
+    <span class="species-tag" style="background:${RARITY_COLORS[buddy.rarity]}22;color:${RARITY_COLORS[buddy.rarity]}">${capitalize(buddy.species)}${buddy.shiny ? ' ✨' : ''}</span>
+  `;
+  document.getElementById('myUsername').value = state.myUsername;
+}
+
+// ====== DISCOVER ======
+document.getElementById('discoverBtn').addEventListener('click', () => {
+  const username = document.getElementById('discoverInput').value.trim();
+  if (!username) return;
+  discoverUsername(username);
+  document.getElementById('discoverInput').value = '';
+  document.getElementById('discoverInput').focus();
+});
+
+document.getElementById('discoverInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('discoverBtn').click();
+});
+
+function discoverUsername(username) {
+  if (!state.usernames) state.usernames = [];
+  if (!state.usernames.includes(username)) state.usernames.push(username);
+
+  const buddy = getBuddy(username);
+  const sp = buddy.species;
+  let newSpecies = false;
+  let newShiny = false;
+
+  if (!state.discovered[sp]) {
+    state.discovered[sp] = username;
+    newSpecies = true;
+  }
+
+  if (buddy.shiny && !state.shinyDiscovered[sp]) {
+    state.shinyDiscovered[sp] = username;
+    newShiny = true;
+  }
+
+  saveState(state);
+  renderDex();
+  updateCompletion();
+  renderTrophies();
+  renderHints();
+
+  if (newSpecies || newShiny) {
+    const label = capitalize(sp) + (newShiny ? ' ✨ (SHINY!)' : '');
+    showToast(`NEW! Discovered ${label}!`);
+
+    // Flash animation on the slot
+    setTimeout(() => {
+      const slots = document.querySelectorAll('.dex-slot');
+      const targetIdx = newShiny ? SPECIES.indexOf(sp) + 18 : SPECIES.indexOf(sp);
+      // Find slot by number
+      slots.forEach(slot => {
+        const num = slot.querySelector('.slot-number');
+        if (num) {
+          const n = parseInt(num.textContent.replace('#', ''));
+          if (n === targetIdx + 1) {
+            slot.classList.add('discovery-flash');
+            // Add NEW badge
+            const badge = document.createElement('div');
+            badge.className = 'new-badge';
+            badge.textContent = 'NEW!';
+            slot.style.position = 'relative';
+            slot.appendChild(badge);
+            setTimeout(() => {
+              slot.classList.remove('discovery-flash');
+              if (badge.parentNode) badge.remove();
+            }, 2000);
+          }
+        }
+      });
+    }, 50);
+  } else {
+    showToast(`@${username} is a ${capitalize(sp)} — already discovered!`);
+  }
+}
+
+// ====== TROPHIES ======
+function renderTrophies() {
+  const grid = document.getElementById('trophyGrid');
+  grid.innerHTML = '';
+  TROPHIES.forEach(t => {
+    const earned = t.check(state);
+    const el = document.createElement('div');
+    el.className = 'trophy ' + (earned ? 'earned' : 'locked');
+    el.innerHTML = `
+      <div class="trophy-icon">${earned ? t.icon : '🔒'}</div>
+      <div class="trophy-name">${t.name}</div>
+      <div class="trophy-desc">${t.desc}</div>
+    `;
+    grid.appendChild(el);
+  });
+}
+
+// ====== HINTS ======
+function renderHints() {
+  const list = document.getElementById('hintList');
+  list.innerHTML = '';
+  const undiscovered = SPECIES.filter(sp => !state.discovered[sp]);
+  if (undiscovered.length === 0) {
+    list.innerHTML = '<li style="color:var(--red);font-weight:700;border:none">All 18 species discovered! You are a true BuddyDex master!</li>';
+    return;
+  }
+  const hints = [
+    `${undiscovered.length} species remain undiscovered`,
+    'Try common names: alice, bob, charlie, test',
+    'Every username maps to exactly one species deterministically',
+    'Trade usernames with friends to fill gaps faster',
+    undiscovered.length <= 5 ? `So close! Only ${undiscovered.length} left!` : 'Some species are rarer to stumble upon than others',
+  ];
+  hints.forEach(h => {
+    const li = document.createElement('li');
+    li.textContent = h;
+    list.appendChild(li);
+  });
+}
+
+// ====== SHARE CARD GENERATOR ======
+document.getElementById('shareBtn').addEventListener('click', generateShareCard);
+document.getElementById('downloadShareBtn').addEventListener('click', downloadShareCard);
+document.getElementById('tweetShareBtn').addEventListener('click', tweetShareCard);
+
+function generateShareCard() {
+  const canvas = document.getElementById('shareCanvas');
+  const W = 600, H = 400;
+  canvas.width = W * 2; canvas.height = H * 2;
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  const ctx = canvas.getContext('2d');
+  const s = 2;
+
+  // Background
+  ctx.fillStyle = '#0d0d0d';
+  ctx.fillRect(0, 0, W * s, H * s);
+
+  // Red accent top
+  ctx.fillStyle = '#991b1b';
+  ctx.fillRect(0, 0, W * s, 80 * s);
+
+  // Title
+  ctx.fillStyle = '#fff';
+  ctx.font = `bold ${32 * s}px -apple-system, sans-serif`;
+  ctx.textAlign = 'left';
+  ctx.fillText('BuddyDex', 24 * s, 52 * s);
+
+  // Completion
+  const speciesCount = Object.keys(state.discovered).length;
+  const shinyCount = Object.keys(state.shinyDiscovered).length;
+  const total = speciesCount + shinyCount;
+  const pct = Math.round((total / 36) * 100);
+
+  ctx.textAlign = 'right';
+  ctx.font = `bold ${24 * s}px -apple-system, sans-serif`;
+  ctx.fillStyle = '#ffd700';
+  ctx.fillText(`${pct}%`, (W - 24) * s, 52 * s);
+  ctx.font = `${14 * s}px -apple-system, sans-serif`;
+  ctx.fillStyle = '#aaa';
+  ctx.fillText(`${total}/36 discovered`, (W - 24) * s, 72 * s);
+
+  // Username
+  if (state.myUsername) {
+    ctx.textAlign = 'left';
+    ctx.font = `${14 * s}px -apple-system, sans-serif`;
+    ctx.fillStyle = '#888';
+    ctx.fillText(`@${state.myUsername}`, 24 * s, 72 * s);
+  }
+
+  // Species grid
+  const gridStartY = 100 * s;
+  const cellW = Math.floor((W * s - 48 * s) / 9);
+  const cellH = 70 * s;
+
+  SPECIES.forEach((sp, idx) => {
+    const col = idx % 9;
+    const row = Math.floor(idx / 9);
+    const x = 24 * s + col * cellW;
+    const y = gridStartY + row * cellH;
+
+    const isDiscovered = !!state.discovered[sp];
+
+    // Cell bg
+    ctx.fillStyle = isDiscovered ? '#1a1a1a' : '#111';
+    ctx.fillRect(x + 2, y + 2, cellW - 4, cellH - 4);
+
+    if (isDiscovered) {
+      const buddy = getBuddy(state.discovered[sp]);
+      ctx.fillStyle = buddy.shiny ? '#ffd700' : '#ccc';
+    } else {
+      ctx.fillStyle = '#333';
+    }
+
+    // Mini sprite (just the middle 3 lines)
+    ctx.font = `${7 * s}px 'SF Mono', Menlo, monospace`;
+    ctx.textAlign = 'center';
+    const sprite = SPRITES[sp];
+    [1, 2, 3].forEach((li, i) => {
+      ctx.fillText(sprite[li], x + cellW / 2, y + 18 * s + i * 9 * s);
+    });
+
+    // Name
+    ctx.font = `bold ${6 * s}px -apple-system, sans-serif`;
+    ctx.fillStyle = isDiscovered ? '#ccc' : '#444';
+    ctx.fillText(isDiscovered ? capitalize(sp) : '???', x + cellW / 2, y + cellH - 8 * s);
+  });
+
+  // Trophy count
+  const earnedCount = TROPHIES.filter(t => t.check(state)).length;
+  ctx.textAlign = 'center';
+  ctx.font = `${12 * s}px -apple-system, sans-serif`;
+  ctx.fillStyle = '#666';
+  ctx.fillText(`${earnedCount}/${TROPHIES.length} trophies earned`, W * s / 2, (H - 20) * s);
+
+  // Watermark
+  ctx.font = `${10 * s}px -apple-system, sans-serif`;
+  ctx.fillStyle = '#444';
+  ctx.fillText('shipitandpray.github.io/buddy-dex', W * s / 2, (H - 6) * s);
+
+  document.getElementById('shareWrap').style.display = 'block';
+}
+
+function downloadShareCard() {
+  const canvas = document.getElementById('shareCanvas');
+  canvas.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `buddydex-${state.myUsername || 'share'}.png`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Share card downloaded!');
+  });
+}
+
+function tweetShareCard() {
+  const speciesCount = Object.keys(state.discovered).length;
+  const pct = Math.round(((speciesCount + Object.keys(state.shinyDiscovered).length) / 36) * 100);
+  const text = `My BuddyDex is ${pct}% complete! ${speciesCount}/18 species discovered. Can you help me fill the rest? 🔍`;
+  const url = 'https://shipitandpray.github.io/buddy-dex/';
+  window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank');
+}
+
+// ====== INIT ======
+function init() {
+  renderYourBuddy();
+  renderDex();
+  updateCompletion();
+  renderTrophies();
+  renderHints();
+
+  // Check URL params
+  const params = new URLSearchParams(window.location.search);
+  const userParam = params.get('user') || params.get('id');
+  if (userParam) {
+    discoverUsername(userParam);
+  }
+}
+
+init();
+</script>
+</body>
+</html>
